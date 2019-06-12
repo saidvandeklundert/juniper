@@ -7,11 +7,11 @@
 #
 #
 from jnpr.junos import Device
+from json import dumps
 
 def interface_to_instance_mapping(cfg_routing_instances):
     """
     Return a dictionary that contains the mapping of interfaces to instance
-
     :return: { interface-name : routing-instance-name }
     """
     routing_instances_info = {}
@@ -30,7 +30,6 @@ def interface_to_instance_mapping(cfg_routing_instances):
 def build_host_ip_info(cfg_interfaces, routing_instances_info):
     """
     Takes in lxml objects and returns the following:
-
     { interface-name : (('instance', instance-name), ('ipv4', ipv4-address), ('ipv6', ipv6-address)))
     """
     host_ip_info = {}
@@ -42,21 +41,24 @@ def build_host_ip_info(cfg_interfaces, routing_instances_info):
             name = interface.find('.//name').text
 
             for unit in interface.findall('.//unit'):
-
+                
                 unit_number = unit.find('.//name').text
                 interface_id = name + '.' + unit_number
                 instance = tuple(['instance', routing_instances_info.get(interface_id, None)])
 
                 if unit.find('.//family/inet/address/name') is None:
                     unit_ipv4_address = tuple(['ipv4', None])
-                else:
-                    unit_ipv4_address = tuple(['ipv4', unit.find('.//family/inet/address/name').text])
+                else:                                                                 
+                    ipv4_list = [ipv4.text for ipv4 in unit.findall('.//family/inet/address/name') ]                    
+                    unit_ipv4_address = tuple(['ipv4', ipv4_list ])
+                    
 
                 if unit.find('.//family/inet6/address/name') is None:
                     unit_ipv6_address = tuple(['ipv6', None])
-                else:
-                    unit_ipv6_address = tuple(['ipv6', unit.find('.//family/inet6/address/name').text])
-
+                else:                    
+                    ipv6_list = [ipv6.text for ipv6 in unit.findall('.//family/inet6/address/name') ]                    
+                    unit_ipv6_address = tuple(['ipv6', ipv6_list ])
+                
                 if unit_ipv4_address[1] is None and unit_ipv6_address[1] is None:
                     continue
 
@@ -67,7 +69,6 @@ def build_host_ip_info(cfg_interfaces, routing_instances_info):
 def get_ip_info(host, username, pwd):
     """
     Logs in to a Junos OS device, retrieves interface and instance information and returns a dictionary with the following format:
-
     { interface-name : (('instance', instance-name), ('ipv4', ipv4-address), ('ipv6', ipv6-address)))
     """
 
@@ -87,21 +88,36 @@ def get_ip_info(host, username, pwd):
     return host_ip_info
 
 
+def write_as_json(file_path, data):
+    """"
+    file_path: example: /var/tmp/data.sls
+    data: dictionary
+    """
+    with open(file_path, "w") as file:
+        file.write(dumps(data, indent=4, separators=(',', ': ')))
+
+
+
 
 
 if __name__ == "__main__":
     """
     You can run the script targeting a single host:
     
-    python juniper.py < hostname >
+    python juniper_gather_ips.py < hostname >
     
     """
-    from os import getlogin
+    from os import getlogin, getcwd
     import getpass, sys
+
     username = getlogin()
     pwd = getpass.getpass()
-
-
+    file_path = getcwd() + '/data.json'
     host = sys.argv[1]
     ip_host_info = get_ip_info(host, username, pwd)
-    print(ip_host_info)
+    
+    for k,v in sorted(ip_host_info.items()):
+        print(k)    # interface name, example: 'ae20.0'
+        print(v)    # tuple(('instance', 'routing_instance'), ('ipv4', ['192.168.1.1/24',]), ('ipv6', ['2001:0000:0000:0000::130/127']))
+    
+    write_as_json(file_path, ip_host_info)
